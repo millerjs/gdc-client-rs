@@ -1,0 +1,11 @@
+[package]
+name = "gdcclient"
+version = "0.1.0"
+authors = ["Joshua Miller <jsmiller@uchicago.edu>"]
+
+[dependencies]
+clap = "2.3.0"
+env_logger = "0.3"
+hyper = "*"
+log = "0.3"
+sledge = { path = "../sledge" }
