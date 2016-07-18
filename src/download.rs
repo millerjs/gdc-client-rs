@@ -6,10 +6,13 @@ use ::get_token;
 use ::read_file;
 use clap::ArgMatches;
 use hyper::header::Headers;
-use sledge;
 use std::io::prelude::*;
 use std::io;
 use std::process::exit;
+use sledge::download::Download;
+use sledge::download::DownloadMode;
+use sledge::download::DownloadTarget;
+use sledge::reporter::ProgressBarReporter;
 
 
 /// Extract args to start a download session
@@ -28,21 +31,57 @@ pub fn download(matches: &ArgMatches)
 
     // Target
     let target = match matches.is_present("STDOUT") {
-        true => sledge::download::DownloadTarget::StdOut,
-        false => sledge::download::DownloadTarget::Default,
+        true => DownloadTarget::StdOut,
+        false => DownloadTarget::Default,
+    };
+
+    // Mode
+    let mode = match matches.value_of("THREADS").unwrap_or("1").parse::<u8>() {
+        Ok(n) if n == 1 => DownloadMode::Serial,
+        Ok(n) => DownloadMode::Parallel(n),
+        Err(e) => {
+            return error!("Unable to parse -n/--threads: {}", e);
+        }
     };
 
     // Start download
-    debug!("Downloading {:?}", urls);
-    info!("Downloading {} {}.", urls.len(), match urls.len() {1 => "id", _ => "ids"});
-    let result = sledge::download::download_urls(urls, target, headers);
-
-    match result {
-        Ok(ok) => info!("{}\n", ok),
-        Err(err) => error!("{}\n", err),
-    }
+    download_urls(urls, target, mode, headers);
 }
 
+
+/// Download a list of urls
+fn download_urls(urls: Vec<String>, target: DownloadTarget, mode: DownloadMode, headers: Headers)
+{
+    debug!("Downloading {:?}", urls);
+    info!("Downloading {} {}.", urls.len(), match urls.len() {1 => "id", _ => "ids"});
+
+    let mut failed: Vec<String> = vec![];
+    let count = urls.len();
+
+    for url in urls {
+
+        let mut download = Download::<ProgressBarReporter>::new(url.clone())
+            .headers(headers.clone())
+            .mode(mode.clone())
+            .target(target.clone());
+
+        match download.download() {
+            Err(err) => {
+                error!("Unable to download {}: {}\n", url, err);
+                failed.push(url);
+            },
+            Ok(bytes) => info!("Download complete. Wrote {} bytes.\n", bytes),
+        }
+    }
+
+    if failed.len() > 0 {
+        error!("Downloaded {} files successfully. Failed to download {}",
+               count - failed.len(), failed.join(", "))
+
+    } else {
+        info!("All {} files downloaded successfully", count)
+    }
+}
 
 /// Reads in a file with an expected GDC manifest format
 pub fn load_ids_from_manifest(manifest_path: &str) -> Result<Vec<String>, io::Error>
